@@ -29,22 +29,40 @@ import epdconfig
 
 from PIL import Image,  ImageDraw,  ImageFont, ImageOps
 from datetime import datetime
-from time import sleep
-
+import time
 import requests 
 
-# Update Interval
-INTERVAL = 30 #seconds
+### Update intervals, change as desired ###
+####################################
+# Update interval for fetching positions, should be min. 15 seconds (because a display refresh takes about 11 to 13 seconds)
+DATA_INTERVAL = 15 #seconds
+# Time between drawing two big dots on the trace line
+BIG_DOT_INTERVAL = 10 * 60 # seconds
+# Number of position fetches between two successive display updates (1 = update on every position fetch, 2 = update every second position fetch, etc.)
+POSITION_FETCH_TO_DISPLAY_REFRESH = 6
 
-# Note:
-# The dimensions of the 2.7 in ePaper display are
-# 264 x 176
+### Map / Geo constants ###
+###########################
+# Maximum values for longitude(-180,180) and latitude(90,-90), do not change
+max_lon = 180
+max_lat = 90
+# Width and height of the background picture / map, adjust accordingly
+map_width = 264
+map_height = 181
+
+### Derived values ###
+#########################
+# Calculate linear scaling factor, assumes map is an equirectangular projection
+hor_factor = map_width/float(max_lon*2)
+ver_factor = map_height/float(max_lat*2)
+# number of data readings during one BIG_DOT_INTERVAL
+position_readings_between_two_big_dots=max((int)(BIG_DOT_INTERVAL/DATA_INTERVAL),1) 
 
 class Display(object):
     def __init__(self, imageWidth, imageHeight):
         self.imageWidth = imageWidth
         self.imageHeight = imageHeight
-
+        
     # Draws the ISS current location and trajectory from array of positions
     def drawISS(self, positions):
         imageBlack = Image.new('1', (self.imageWidth, self.imageHeight), 255) # 1: clear the frame
@@ -57,37 +75,31 @@ class Display(object):
   
         for i,t in enumerate(positions):
             (lat,lon) = t
+            (x,y) = self.getXYFromLonLat(lat, lon)
 
-            # Map the lat, lon to our x/y coordinate system
-            (x,y) = self.mapLatLongToXY(lat, lon)
-
-            # last position in the positions array is the latest location
-            # Every 15 minutes, we add a rectangular marker
-            # and a small red circle to mark other locations
-        
             if (i == len(positions) - 1):
-                s = 10
-                # drawred.rectangle((x-s,y-s,x+s,y+s), fill=0)
+                # Draw ISS on latest position
+                s = 10 # half the width/height of the issLogo
                 imageRed.paste(issLogo, ((int)(x-s), (int)(y-s)))
-            elif (((i+1) % 30) == 0): # every 15 minutes (one reading every 30 seconds, so 30 readings)
-                s = 2
-                drawred.rectangle((x-s,y-s,x+s,y+s), fill=0)
+            elif (i % position_readings_between_two_big_dots == 0):
+                # Draw big dot every BIG_DOT_INTERVAL seconds (one reading every DATA_INTERVAL seconds, so every BIG_DOT_INTERVAL/DATA_INTERVAL readings)
+                s = 3
+                drawred.ellipse((x-s,y-s,x+s,y+s), fill=0)
             else:
+                # Draw small dot
                 s = 1
                 drawred.ellipse((x-s,y-s,x+s,y+s), outline=0)
-                # drawred.point((x,y), fill=0)
 
         # return the rendered Red and Black images
         return imageBlack, imageRed
 
-    # Maps lat, long to x,y coordinates in 264x181 (the size of the world map)
-    # (90 to -90 lat and -180 to 180 lon) map to 0-181 (y) and 0-264 (x) respectively
-    # Simple algebra gives us the equations below
-    # Recalculate as appropriate for map size and coordinates
-    def mapLatLongToXY(self, lat, lon):
-        x = (int)(0.733 * lon + 132)
-        y = (int)(-1.006 * lat + 90.5)
-        return x, y 
+    # Calculates x and y coordinates for the 264x181 world map background picture
+    # from longitude and latitude using linear scaing factors hor_factor and hor_factor
+    def getXYFromLonLat(self, lat, lon):
+        x = (int)((lon + max_lon) * hor_factor)
+        # Subtract from map_height because the latitude grows from bottom to the top (-90 to 90), while the y coordinates grow from top to bottom (0 to map_height) 
+        y = (int)(map_height - (lat + max_lat) * ver_factor)
+        return x, y
 
 # The main function    
 def main():
@@ -96,36 +108,32 @@ def main():
 
     # Initialize and clear the 2in7b (tri-color) display
     epd = epd2in7b.EPD()
-
     display = Display(epd2in7b.EPD_HEIGHT, epd2in7b.EPD_WIDTH)
 
-    # Store positions in list
     positions = []
-
     while(True):
-        epd.init()
-
         r = requests.get(url = URL)
-
-        # extracting data in json format 
         data = r.json() 
-        print(data)
         
         lat = float(data['iss_position']['latitude'])
         lon = float(data['iss_position']['longitude'])
         
         positions.append((lat, lon))
-        print(positions)
-
-        (imageBlack, imageRed) = display.drawISS(positions)
-
-        # We're drawing the map in black and the ISS location and trajectory in red
-        # Swap it around if you'd like the inverse color scheme
-        epd.display(epd.getbuffer(imageBlack), epd.getbuffer(imageRed))
-        sleep(2)
-        epd.sleep()
-       
-        sleep(INTERVAL) # sleep for 30 seconds 
+        print("New coordinates: " + str(positions[len(positions) -1]))
+        
+        # update the display every POSITION_FETCH_TO_DISPLAY_REFRESH times
+        t0 = (int)(time.time())
+        if (len(positions) % POSITION_FETCH_TO_DISPLAY_REFRESH == 1):
+            print("Updating screen ...")
+            epd.init()
+            (imageBlack, imageRed) = display.drawISS(positions)
+            epd.display(epd.getbuffer(imageBlack), epd.getbuffer(imageRed))
+            time.sleep(2)
+            epd.sleep()
+        t1 = (int)(time.time())
+        
+        screen_refresh_dur = t1 - t0
+        time.sleep(max((DATA_INTERVAL - screen_refresh_dur), 0)) # Try to keep an data refresh interval of DATA_INTERVAL seconds
 
 
 # gracefully exit without a big exception message if possible
