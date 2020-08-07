@@ -136,12 +136,11 @@ def main():
             epd.display(epd.getbuffer(imageBlack), epd.getbuffer(imageRed))
             time.sleep(2)
             epd.sleep()
-            t3 = time.time()
-            myPrint("Updated screen in " + str(round(t3 - t2)) + "s.")
+            myPrint("Updated screen in " + str(round(time.time() - t2)) + "s.")
         
         t1 = time.time()
-        loop_dur  = round(t1 - t0)
-        time.sleep(max((DATA_INTERVAL - loop_dur), 0)) # Try to keep a data refresh interval of DATA_INTERVAL seconds
+        sleepTime = max(DATA_INTERVAL - (t1 - t0), 0)
+        time.sleep(sleepTime) # Try to keep a data refresh interval of DATA_INTERVAL seconds
 
 
 # gracefully exit without a big exception message if possible
