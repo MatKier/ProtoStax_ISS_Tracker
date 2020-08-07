@@ -34,12 +34,12 @@ import requests
 
 ### Update intervals, change as desired ###
 ####################################
-# Update interval for fetching positions, should be min. 15 seconds (because a display refresh takes about 11 to 13 seconds)
-DATA_INTERVAL = 15 #seconds
+# Update interval for fetching positions, should be min. 20 seconds (because a display refresh takes about 15 to 19 seconds)
+DATA_INTERVAL = 30 #seconds
 # Time between drawing two big dots on the trace line
 BIG_DOT_INTERVAL = 10 * 60 # seconds
-# Number of position fetches between two successive display updates (1 = update on every position fetch, 2 = update every second position fetch, etc.)
-POSITION_FETCH_TO_DISPLAY_REFRESH = 6
+# Number of position fetches between two successive display updates (1 = update on every position fetch, 2 = update on every second position fetch, etc.)
+POSITION_FETCH_TO_DISPLAY_REFRESH = 3
 
 ### Map / Geo constants ###
 ###########################
@@ -101,6 +101,10 @@ class Display(object):
         y = (int)(map_height - (lat + max_lat) * ver_factor)
         return x, y
 
+def myPrint(text):
+    nowStr = datetime.utcnow().strftime("%H:%M:%S")
+    print(nowStr + "> " + text.encode('ascii', 'ignore').decode('ascii'))
+
 # The main function    
 def main():
     # API to get ISS Current Location
@@ -119,26 +123,28 @@ def main():
         lon = float(data['iss_position']['longitude'])
         
         positions.append((lat, lon))
-        print("New coordinates: " + str(positions[len(positions) -1]))
+        myPrint("Fetched new coordinates: " + str(positions[len(positions) -1]))
         
-        # update the display every POSITION_FETCH_TO_DISPLAY_REFRESH times
-        t0 = (int)(time.time())
+        screen_refresh_dur = 0
+        # update the display only every POSITION_FETCH_TO_DISPLAY_REFRESH times
         if (len(positions) % POSITION_FETCH_TO_DISPLAY_REFRESH == 1):
-            print("Updating screen ...")
+            myPrint("Updating screen ...")
+            t0 = (int)(time.time())
             epd.init()
             (imageBlack, imageRed) = display.drawISS(positions)
             epd.display(epd.getbuffer(imageBlack), epd.getbuffer(imageRed))
             time.sleep(2)
             epd.sleep()
-        t1 = (int)(time.time())
+            t1 = (int)(time.time())
+            screen_refresh_dur = t1 - t0
+            myPrint("Updated screen in " + str(screen_refresh_dur) + "s.")
         
-        screen_refresh_dur = t1 - t0
         time.sleep(max((DATA_INTERVAL - screen_refresh_dur), 0)) # Try to keep an data refresh interval of DATA_INTERVAL seconds
 
 
 # gracefully exit without a big exception message if possible
 def ctrl_c_handler(signal, frame):
-    print('Goodbye!')
+    myPrint('Goodbye!')
     # XXX : TODO
     #
     # To preserve the life of the ePaper display, it is best not to keep it powered up -
@@ -156,7 +162,7 @@ def ctrl_c_handler(signal, frame):
     # because slepe/module_exit closes the SPI handle, which wasn't getting initialized in module_init
     epdconfig.module_init()
     epdconfig.module_exit()
-    print("Remeber to clear the display using cleardisplay.py if you plan to power down your Pi and store it, to prevent burn-in!")
+    myPrint("Remeber to clear the display using cleardisplay.py if you plan to power down your Pi and store it, to prevent burn-in!")
     exit(0)
 
 signal.signal(signal.SIGINT, ctrl_c_handler)
