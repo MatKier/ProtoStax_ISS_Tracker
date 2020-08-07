@@ -116,6 +116,7 @@ def main():
 
     positions = []
     while(True):
+        t0 = time.time()
         r = requests.get(url = URL)
         data = r.json() 
         
@@ -129,17 +130,18 @@ def main():
         # update the display only every POSITION_FETCH_TO_DISPLAY_REFRESH times
         if (len(positions) % POSITION_FETCH_TO_DISPLAY_REFRESH == 1):
             myPrint("Updating screen ...")
-            t0 = (int)(time.time())
+            t2 = time.time()
             epd.init()
             (imageBlack, imageRed) = display.drawISS(positions)
             epd.display(epd.getbuffer(imageBlack), epd.getbuffer(imageRed))
             time.sleep(2)
             epd.sleep()
-            t1 = (int)(time.time())
-            screen_refresh_dur = t1 - t0
-            myPrint("Updated screen in " + str(screen_refresh_dur) + "s.")
+            t3 = time.time()
+            myPrint("Updated screen in " + str(round(t3 - t2)) + "s.")
         
-        time.sleep(max((DATA_INTERVAL - screen_refresh_dur), 0)) # Try to keep an data refresh interval of DATA_INTERVAL seconds
+        t1 = time.time()
+        loop_dur  = round(t1 - t0)
+        time.sleep(max((DATA_INTERVAL - loop_dur), 0)) # Try to keep a data refresh interval of DATA_INTERVAL seconds
 
 
 # gracefully exit without a big exception message if possible
