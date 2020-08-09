@@ -127,7 +127,7 @@ def main():
         myPrint("Fetched new coordinates: " + str(positions[len(positions) -1]))
         
         # Refresh the display on the first fetch and then on every DISPLAY_REFRESH_INTERVAL fetch
-        if (len(positions) % DISPLAY_REFRESH_INTERVAL == 1):
+        if (DISPLAY_REFRESH_INTERVAL == 1 or len(positions) % DISPLAY_REFRESH_INTERVAL == 1):
             myPrint("Updating screen ...")
             t2 = time.time()
             epd.init()
