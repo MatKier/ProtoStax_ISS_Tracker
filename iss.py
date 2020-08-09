@@ -38,8 +38,8 @@ import requests
 DATA_INTERVAL = 30 #seconds
 # Time between drawing two big dots on the trace line
 BIG_DOT_INTERVAL = 10 * 60 # seconds
-# Number of position fetches between two successive display updates (1 = update on every position fetch, 2 = update on every second position fetch, etc.)
-POSITION_FETCH_TO_DISPLAY_REFRESH = 3
+# Update interval for the display
+DISPLAY_REFRESH_INTERVAL = 3 # Number of DATA_INTERVAL between successive display updates (e.g. 2 => update display every second deta fetch)
 
 ### Map / Geo constants ###
 ###########################
@@ -126,9 +126,8 @@ def main():
         positions.append((lat, lon))
         myPrint("Fetched new coordinates: " + str(positions[len(positions) -1]))
         
-        screen_refresh_dur = 0
-        # update the display only every POSITION_FETCH_TO_DISPLAY_REFRESH times
-        if (len(positions) % POSITION_FETCH_TO_DISPLAY_REFRESH == 1):
+        # Refresh the display on the first fetch and then on every DISPLAY_REFRESH_INTERVAL fetch
+        if (len(positions) % DISPLAY_REFRESH_INTERVAL == 1):
             myPrint("Updating screen ...")
             t2 = time.time()
             epd.init()
