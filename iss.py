@@ -32,14 +32,16 @@ from datetime import datetime
 import time
 import requests 
 
-### Update intervals, change as desired ###
+### Change as desired ###
 ####################################
 # Update interval for fetching positions, should be min. 20 seconds (because a display refresh takes about 15 to 19 seconds)
 DATA_INTERVAL = 30 #seconds
 # Time between drawing two big dots on the trace line
-BIG_DOT_INTERVAL = 10 * 60 # seconds
+BIG_DOT_INTERVAL = 15 * 60 # seconds
 # Update interval for the display
 DISPLAY_REFRESH_INTERVAL = 3 # Number of DATA_INTERVAL between successive display updates (e.g. 2 => update display every second deta fetch)
+# Maximum past orbits to keep on the display, can be a float
+MAX_ORBIT_TRACES = 1.25
 
 ### Map / Geo constants ###
 ###########################
@@ -56,7 +58,7 @@ map_height = 181
 hor_factor = map_width/float(max_lon*2)
 ver_factor = map_height/float(max_lat*2)
 # number of data readings during one BIG_DOT_INTERVAL
-position_readings_between_two_big_dots=max((int)(BIG_DOT_INTERVAL/DATA_INTERVAL),1) 
+position_readings_between_two_big_dots = max((int)(BIG_DOT_INTERVAL/DATA_INTERVAL),1)
 
 class Display(object):
     def __init__(self, imageWidth, imageHeight):
@@ -76,6 +78,11 @@ class Display(object):
         for i,t in enumerate(positions):
             (lat,lon) = t
             (x,y) = self.getXYFromLonLat(lat, lon)
+
+            # Only draw the last MAX_ORBIT_TRACES on the screen (based on one orbit per 90 mins). 
+            if(i <= len(positions) - (MAX_ORBIT_TRACES * (90 * 60) / DATA_INTERVAL)):
+                # Ignore all older positions but keep them in the list, so that calculations based on len(positions) dont't change
+                continue
 
             if (i == len(positions) - 1):
                 # Draw ISS on latest position
