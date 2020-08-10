@@ -51,14 +51,9 @@ max_lat = 90
 # Width and height of the background picture / map, adjust accordingly
 map_width = 264
 map_height = 181
-
-### Derived values ###
-#########################
 # Calculate linear scaling factor, assumes map is an equirectangular projection
 hor_factor = map_width/float(max_lon*2)
 ver_factor = map_height/float(max_lat*2)
-# number of data readings during one BIG_DOT_INTERVAL
-position_readings_between_two_big_dots = max((int)(BIG_DOT_INTERVAL/DATA_INTERVAL),1)
 
 class Display(object):
     def __init__(self, imageWidth, imageHeight):
@@ -88,7 +83,7 @@ class Display(object):
                 # Draw ISS on latest position
                 s = 10 # half the width/height of the issLogo
                 imageRed.paste(issLogo, ((int)(x-s), (int)(y-s)))
-            elif (i % position_readings_between_two_big_dots == 0):
+            elif (i % max((int)(BIG_DOT_INTERVAL/DATA_INTERVAL),1) == 0):
                 # Draw big dot every BIG_DOT_INTERVAL seconds (one reading every DATA_INTERVAL seconds, so every BIG_DOT_INTERVAL/DATA_INTERVAL readings)
                 s = 3
                 drawred.ellipse((x-s,y-s,x+s,y+s), fill=0)
