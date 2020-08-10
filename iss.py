@@ -64,6 +64,8 @@ class Display(object):
     def drawISS(self, positions):
         imageBlack = Image.new('1', (self.imageWidth, self.imageHeight), 255) # 1: clear the frame
         imageMap = Image.open('world_map_m.bmp').convert('L')
+        if ((int)(time.strftime("%H")) % 2 == 0):
+            imageMap = ImageOps.invert(imageMap)
         imageBlack.paste(imageMap, (0,0))
 
         imageRed = Image.new('1', (self.imageWidth, self.imageHeight), 255) # 1: clear the frame
