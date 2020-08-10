@@ -95,7 +95,7 @@ class Display(object):
             else:
                 # Draw small dot
                 s = 1
-                drawred.ellipse((x-s,y-s,x+s,y+s), outline=0)
+                drawred.ellipse((x-s,y-s,x+s,y+s), fill=0)
 
         # return the rendered Red and Black images
         return imageBlack, imageRed
