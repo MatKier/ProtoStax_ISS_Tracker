@@ -41,7 +41,7 @@ BIG_DOT_INTERVAL = 15 * 60 # seconds
 # Update interval for the display
 DISPLAY_REFRESH_INTERVAL = 3 # Number of DATA_INTERVAL between successive display updates (e.g. 2 => update display every second deta fetch)
 # Maximum past orbits to keep on the display, can be a float
-MAX_ORBIT_TRACES = 1.25
+MAX_ORBIT_TRACES = 1.0
 
 ### Map / Geo constants ###
 ###########################
@@ -80,7 +80,7 @@ class Display(object):
             (x,y) = self.getXYFromLonLat(lat, lon)
 
             # Only draw the last MAX_ORBIT_TRACES on the screen (based on one orbit per 90 mins). 
-            if(i <= len(positions) - (MAX_ORBIT_TRACES * (90 * 60) / DATA_INTERVAL)):
+            if(i < len(positions) - (MAX_ORBIT_TRACES * (90 * 60) / DATA_INTERVAL)):
                 # Ignore all older positions but keep them in the list, so that calculations based on len(positions) dont't change
                 continue
 
