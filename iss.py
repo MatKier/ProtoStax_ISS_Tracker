@@ -73,13 +73,13 @@ class Display(object):
         drawred = ImageDraw.Draw(imageRed)
   
         for i,t in enumerate(positions):
-            (lat,lon) = t
-            (x,y) = self.getXYFromLonLat(lat, lon)
-
-            # Only draw the last MAX_ORBIT_TRACES on the screen (based on one orbit per 90 mins). 
+            # Only draw the last MAX_ORBIT_TRACES on the screen (based on one orbit per 90 mins).
             if(i < len(positions) - (MAX_ORBIT_TRACES * (90 * 60) / DATA_INTERVAL)):
                 # Ignore all older positions but keep them in the list, so that calculations based on len(positions) dont't change
                 continue
+            
+            (lat,lon) = t
+            (x,y) = self.getXYFromLonLat(lat, lon)
 
             if (i == len(positions) - 1):
                 # Draw ISS on latest position
