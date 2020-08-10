@@ -72,15 +72,19 @@ class Display(object):
         issLogo = Image.open('iss.bmp').convert('L')
         drawred = ImageDraw.Draw(imageRed)
   
-        for i,t in enumerate(positions):
+        
+        maxPositionsToDraw = len(positions) - (MAX_ORBIT_TRACES * (90 * 60) / DATA_INTERVAL)
+        # Traversing positons in reverse so we can simply break out after MAX_ORBIT_TRACES ('i' starts at len(positions -1))
+        for i,t in reversed(list(enumerate(positions))):
             # Only draw the last MAX_ORBIT_TRACES on the screen (based on one orbit per 90 mins).
-            if(i < len(positions) - (MAX_ORBIT_TRACES * (90 * 60) / DATA_INTERVAL)):
+            if(i < maxPositionsToDraw):
                 # Ignore all older positions but keep them in the list, so that calculations based on len(positions) dont't change
-                continue
+                break
             
             (lat,lon) = t
             (x,y) = self.getXYFromLonLat(lat, lon)
 
+            # Draw ISS frist (backwards iteration), trajectory line on top, so that the white iss.bmp background does not 'cut' into the trajectory line
             if (i == len(positions) - 1):
                 # Draw ISS on latest position
                 s = 10 # half the width/height of the issLogo
