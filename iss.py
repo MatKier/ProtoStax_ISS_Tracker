@@ -125,14 +125,21 @@ def main():
     positions = []
     while(True):
         t0 = time.time()
-        r = requests.get(url = URL)
-        data = r.json() 
+        try:
+            r = requests.get(url = URL)
+            data = r.json() 
         
-        lat = float(data['iss_position']['latitude'])
-        lon = float(data['iss_position']['longitude'])
+            lat = float(data['iss_position']['latitude'])
+            lon = float(data['iss_position']['longitude'])
         
-        positions.append((lat, lon))
-        myPrint("Fetched new coordinates: " + str(positions[len(positions) -1]))
+            positions.append((lat, lon))
+            myPrint("Fetched new coordinates: " + str(positions[len(positions) -1]))
+        except:
+            myPrint("Problem while fetching new coordinates!")
+            if (len(positions) > 0):
+                myPrint("Appending last position: " + str(positions[len(positions) - 1]))
+                # Appending last positon so logic based on len(positions) (display refresh, marker positon) isn't affected by a few fails
+                positions.append(positions[len(positions)-1])
         
         # Refresh the display on the first fetch and then on every DISPLAY_REFRESH_INTERVAL fetch
         if (DISPLAY_REFRESH_INTERVAL == 1 or len(positions) % DISPLAY_REFRESH_INTERVAL == 1):
