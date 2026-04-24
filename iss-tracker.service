@@ -1,0 +1,22 @@
+[Unit]
+Description=ISS Tracker E-Ink Display
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=pi
+WorkingDirectory=/home/pi/workspace/ProtoStax_ISS_Tracker
+ExecStart=/home/pi/workspace/ProtoStax_ISS_Tracker/venv/bin/python -u /home/mpi/workspace/ProtoStax_ISS_Tracker/iss.py
+KillSignal=SIGINT
+TimeoutStopSec=20
+KillMode=control-group
+SendSIGKILL=yes
+
+Restart=on-failure
+RestartSec=5
+
+SupplementaryGroups=spi gpio
+
+[Install]
+WantedBy=multi-user.targe
