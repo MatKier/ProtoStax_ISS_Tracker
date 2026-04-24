@@ -40,7 +40,7 @@ import requests
 # Update interval for fetching positions
 DATA_INTERVAL = 5  # seconds
 # How often to refresh the display, in seconds
-DISPLAY_REFRESH_INTERVAL = 120  # seconds
+DISPLAY_REFRESH_INTERVAL = 180  # seconds
 ORBITS_TO_KEEP = 2.9
 
 ORBIT_DURATION = 90 * 60  # seconds, approximate ISS orbital period
