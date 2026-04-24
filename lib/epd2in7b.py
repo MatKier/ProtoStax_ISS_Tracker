@@ -118,10 +118,10 @@ class EPD:
         epdconfig.digital_write(self.cs_pin, 1)
         
     def ReadBusy(self):
-        print("e-Paper busy")
+        #print("e-Paper busy")
         while(epdconfig.digital_read(self.busy_pin) == 0):      # 0: idle, 1: busy
             epdconfig.delay_ms(100)
-        print("e-Paper busy release")
+        #print("e-Paper busy release")
         
     def set_lut(self):
         self.send_command(0x20)               # vcom
@@ -212,14 +212,14 @@ class EPD:
         pixels = image_monocolor.load()
         # print "imwidth = %d, imheight = %d",imwidth,imheight
         if(imwidth == self.width and imheight == self.height):
-            print("Vertical")
+            #print("Vertical")
             for y in range(imheight):
                 for x in range(imwidth):
                     # Set the bits for the column of pixels at the current position.
                     if pixels[x, y] == 0:
                         buf[(x + y * self.width) // 8] &= ~(0x80 >> (x % 8))
         elif(imwidth == self.height and imheight == self.width):
-            print("Horizontal")
+            #print("Horizontal")
             for y in range(imheight):
                 for x in range(imwidth):
                     newx = y

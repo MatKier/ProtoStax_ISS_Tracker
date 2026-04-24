@@ -68,7 +68,7 @@ def module_init():
 def module_sleep():
     global SPI
     if SPI is not None:
-        print("spi end")
+        #print("spi end")
         SPI.close()
     
     print("close 5V, Module enters 0 power consumption ...")
