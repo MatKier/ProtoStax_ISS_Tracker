@@ -27,6 +27,8 @@ sys.path.append(r'lib')
 if sys.version_info[0] < 3:
     raise Exception("Must be using Python 3")
 
+import json
+import os
 import signal
 import threading
 from collections import deque
@@ -40,7 +42,7 @@ import requests
 # Update interval for fetching positions
 DATA_INTERVAL = 10  # seconds
 # How often to refresh the display, in seconds
-DISPLAY_REFRESH_INTERVAL = 300  # seconds
+DISPLAY_REFRESH_INTERVAL = 180  # seconds
 ORBITS_TO_KEEP = 2.9
 
 ORBIT_DURATION = 90 * 60  # seconds, approximate ISS orbital period
@@ -52,6 +54,46 @@ DATA_LIMIT = int(ORBITS_TO_KEEP * ORBIT_DURATION / DATA_INTERVAL)  # number of s
 # Module-level handles so the signal handler can reach them without a second init.
 _stop_event = threading.Event()
 _epd = None
+_positions = None   # set in main()
+_lock = None        # set in main()
+
+CACHE_FILE = 'iss_cache.json'
+CACHE_MAX_AGE = 10 * 60  # seconds; discard whole cache if newest entry is older than this
+
+
+def save_positions(positions, lock):
+    try:
+        with lock:
+            snapshot = list(positions)
+        tmp = CACHE_FILE + '.tmp'
+        with open(tmp, 'w') as f:
+            json.dump(snapshot, f)
+        os.replace(tmp, CACHE_FILE)
+        print(f"Saved {len(snapshot)} positions to {CACHE_FILE}")
+    except Exception as e:
+        print(f"Warning: could not save cache: {e}")
+
+
+def load_positions():
+    try:
+        with open(CACHE_FILE, 'r') as f:
+            raw = json.load(f)
+        if not raw:
+            return []
+        newest_ts = raw[-1][2]
+        age = int(time() - newest_ts)
+        if age > CACHE_MAX_AGE:
+            print(f"Cache stale ({age}s old), starting fresh")
+            return []
+        entries = [tuple(p) for p in raw]
+        print(f"Loaded {len(entries)} positions from cache ({age}s old)")
+        return entries
+    except FileNotFoundError:
+        print("No cache file, starting fresh")
+        return []
+    except Exception as e:
+        print(f"Warning: could not load cache ({e}), starting fresh")
+        return []
 
 
 class Display(object):
@@ -130,24 +172,29 @@ def display_loop(display, epd, positions, lock, stop_event, data_available):
 
 
 def main():
-    global _epd
+    global _epd, _positions, _lock
     URL = 'http://api.open-notify.org/iss-now.json'
 
     _epd = epd2in7b.EPD()
     display = Display(epd2in7b.EPD_HEIGHT, epd2in7b.EPD_WIDTH)
 
-    positions = deque(maxlen=DATA_LIMIT)
-    lock = threading.Lock()
+    _lock = threading.Lock()
     data_available = threading.Event()
+
+    _positions = deque(maxlen=DATA_LIMIT)
+    cached = load_positions()
+    if cached:
+        _positions.extend(cached)
+        data_available.set()  # display_loop can render immediately from restored history
 
     fetcher = threading.Thread(
         target=fetch_loop,
-        args=(URL, positions, lock, _stop_event, data_available),
+        args=(URL, _positions, _lock, _stop_event, data_available),
         daemon=True,
     )
     displayer = threading.Thread(
         target=display_loop,
-        args=(display, _epd, positions, lock, _stop_event, data_available),
+        args=(display, _epd, _positions, _lock, _stop_event, data_available),
         daemon=True,
     )
 
@@ -163,6 +210,8 @@ def main():
 def ctrl_c_handler(signal, frame):
     print('Goodbye!')
     _stop_event.set()
+    if _positions is not None and _lock is not None:
+        save_positions(_positions, _lock)
     # To preserve the life of the ePaper display, it is best not to keep it powered up -
     # instead putting it to sleep when done displaying, or cutting off power to it altogether when
     # quitting. We'll also make sure to clear the screen when exiting. If you are powering down your

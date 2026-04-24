@@ -135,3 +135,7 @@ dmypy.json
 # Cython debug symbols
 cython_debug/
 
+# ISS tracker runtime cache
+iss_cache.json
+iss_cache.json.tmp
+
