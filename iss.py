@@ -27,167 +27,153 @@ sys.path.append(r'lib')
 if sys.version_info[0] < 3:
     raise Exception("Must be using Python 3")
 
-from enum import Enum
 import signal
+import threading
+from collections import deque
 import epd2in7b
-import epdconfig
 
-from PIL import Image,  ImageDraw,  ImageFont, ImageOps
-from datetime import datetime
-from time import time, sleep
+from PIL import Image, ImageDraw
+from time import time
 
 import requests
 
-# Update Interval for fetching positions
-DATA_INTERVAL = 30 #seconds
-# Update interval for the display
-# =20 means update every 10 minutes
-DISPLAY_REFRESH_INTERVAL = 20 # Number of DATA_INTERVAL between successive display updates (e.g. 2 => update display every second deta fetch)
+# Update interval for fetching positions
+DATA_INTERVAL = 5  # seconds
+# How often to refresh the display, in seconds
+DISPLAY_REFRESH_INTERVAL = 120  # seconds
+ORBITS_TO_KEEP = 2.9
 
-# Limit the number of data entries
-# Entries older than this will be aged out - ie. circular buffer
-# Since we update the position every 30 seconds (DATA_INTERVAL),
-# that would be 24*60*2 = 2880 data points. The ISS does about
-# 16 orbits per day. Setting the DATA_LIMIT to 1440 would give us about
-# 8 orbits worth of data
-# You can adjust this down to the period of interest for you with the
-# above math
-DATA_LIMIT = 1440 # positions limit
+ORBIT_DURATION = 90 * 60  # seconds, approximate ISS orbital period
+DATA_LIMIT = int(ORBITS_TO_KEEP * ORBIT_DURATION / DATA_INTERVAL)  # number of samples depending on the orbits to keep
 
 # Note:
-# The dimensions of the 2.7 in ePaper display are
-# 264 x 176
+# The dimensions of the 2.7 in ePaper display are 264 x 176
+
+# Module-level handles so the signal handler can reach them without a second init.
+_stop_event = threading.Event()
+_epd = None
+
 
 class Display(object):
     def __init__(self, imageWidth, imageHeight):
         self.imageWidth = imageWidth
         self.imageHeight = imageHeight
+        self.imageMap = Image.open('world_map_m.bmp').convert('L')
+        self.issLogo = Image.open('iss.bmp').convert('L')
 
-    # Draws the ISS current location and trajectory from array of positions
-    def drawISS(self, positions, date_time):
-        imageBlack = Image.new('1', (self.imageWidth, self.imageHeight), 255) # 1: clear the frame
-        imageMap = Image.open('world_map_m.bmp').convert('L')
-        imageBlack.paste(imageMap, (0,0))
+    def drawISS(self, positions):
+        imageBlack = Image.new('1', (self.imageWidth, self.imageHeight), 255)
+        imageBlack.paste(self.imageMap, (0, 0))
 
-        imageRed = Image.new('1', (self.imageWidth, self.imageHeight), 255) # 1: clear the frame
-        issLogo = Image.open('iss.bmp').convert('L')
+        imageRed = Image.new('1', (self.imageWidth, self.imageHeight), 255)
         drawred = ImageDraw.Draw(imageRed)
-        font16 = ImageFont.truetype('fonts/arial.ttf', 16)
 
-        for i,t in enumerate(positions):
-            (lat,lon) = t
+        last = len(positions) - 1
+        for i, (lat, lon, ts) in enumerate(positions):
+            x, y = self.mapLatLongToXY(lat, lon)
 
-            # Map the lat, lon to our x/y coordinate system
-            (x,y) = self.mapLatLongToXY(lat, lon)
-
-            # last position in the positions array is the latest location
-            # Every 15 minutes, we add a rectangular marker
-            # and a small red circle to mark other locations
-
-            if (i == len(positions) - 1):
+            if i == last:
                 s = 10
-                # drawred.rectangle((x-s,y-s,x+s,y+s), fill=0)
-                imageRed.paste(issLogo, ((int)(x-s), (int)(y-s)))
-            elif (((i+1) % (15 * 60 / DATA_INTERVAL)) == 0): # every 15 minutes (so 15 * 60s / DATA_INTERVAL = number of readings within 15 minutes)
-                s = 2
-                drawred.rectangle((x-s,y-s,x+s,y+s), fill=0)
+                imageRed.paste(self.issLogo, (int(x - s), int(y - s)))
             else:
-                s = 1
-                drawred.ellipse((x-s,y-s,x+s,y+s), outline=0)
-                # drawred.point((x,y), fill=0)
+                s = 2.5 if ts % (15 * 60) < DATA_INTERVAL else 1
+                drawred.ellipse((x - s, y - s, x + s, y + s), fill=0)
 
-        # Rotate image 180 degrees - Remove the # comments of the lines below to rotate the image and allow for alternate positioning/mounting of the Raspberry Pi 
+        # Rotate image 180 degrees - Remove the # comments of the lines below to rotate the image and allow for alternate positioning/mounting of the Raspberry Pi
         # imageRed = imageRed.transpose(Image.ROTATE_180)
         # imageBlack = imageBlack.transpose(Image.ROTATE_180)
-        
-        w1, h1 = font16.getsize(date_time) 
-        drawred.text(((264-w1)/2,176-h1), date_time, font = font16, fill = 0)
 
-        # return the rendered Red and Black images
         return imageBlack, imageRed
 
-    # Maps lat, long to x,y coordinates in 264x181 (the size of the world map)
-    # (90 to -90 lat and -180 to 180 lon) map to 0-181 (y) and 0-264 (x) respectively
-    # Simple algebra gives us the equations below
-    # Recalculate as appropriate for map size and coordinates
     def mapLatLongToXY(self, lat, lon):
-        x = (int)(0.733 * lon + 132)
-        y = (int)(-1.006 * lat + 90.5)
+        x = int(0.733 * lon + 132)
+        y = int(-1.006 * lat + 90.5)
         return x, y
 
-# The main function
-def main():
-    # API to get ISS Current Location
-    URL = 'http://api.open-notify.org/iss-now.json'
 
-    # Initialize and clear the 2in7b (tri-color) display
-    epd = epd2in7b.EPD()
-
-    display = Display(epd2in7b.EPD_HEIGHT, epd2in7b.EPD_WIDTH)
-
-    # Store positions in list
-    positions = []
-    DISPLAY_REFRESH_INTERVAL_COUNTER = 1    
-
-    while(True):
-        t0 = time()
+def fetch_loop(url, positions, lock, stop_event, data_available):
+    while not stop_event.is_set():
         try:
-            r = requests.get(url = URL)
-
-            # extracting data in json format
+            print("Fetching data ...", flush=True)
+            r = requests.get(url=url, timeout=10)
             data = r.json()
             print(data)
-        except:
-            print("error getting data.... might be a temporary hiccup so continuing")
-            continue
+            lat = float(data['iss_position']['latitude'])
+            lon = float(data['iss_position']['longitude'])
+            ts = data['timestamp']
+            with lock:
+                positions.append((lat, lon, ts))
+            data_available.set()  # stays set after first successful fetch
+        except Exception as e:
+            print(f"Error fetching data: {e}, continuing")
+        stop_event.wait(DATA_INTERVAL)
 
-        lat = float(data['iss_position']['latitude'])
-        lon = float(data['iss_position']['longitude'])
-        if len(positions) > (DATA_LIMIT - 1):
-            del positions[0]
-        positions.append((lat, lon))
-        print(positions)
-        print(len(positions))
 
-        # Refresh the display on the first fetch and then on every DISPLAY_REFRESH_INTERVAL fetch
-        if ((len(positions) == 1) or DISPLAY_REFRESH_INTERVAL_COUNTER == DISPLAY_REFRESH_INTERVAL):
+def display_loop(display, epd, positions, lock, stop_event, data_available):
+    # Block until the first position arrives (or shutdown)
+    data_available.wait()
+
+    while not stop_event.is_set():
+        t0 = time()
+        with lock:
+            current_positions = list(positions)
+
+        if current_positions:
+            print("Updating display", flush=True)
             epd.init()
-            now = datetime.now() # current date and time
-            date_time = now.strftime("%m/%d/%Y, %H:%M:%S")
-            (imageBlack, imageRed) = display.drawISS(positions, date_time)
-            # We're drawing the map in black and the ISS location and trajectory in red
-            # Swap it around if you'd like the inverse color scheme
+            imageBlack, imageRed = display.drawISS(current_positions)
             epd.display(epd.getbuffer(imageBlack), epd.getbuffer(imageRed))
-            sleep(2)
             epd.sleep()
-            if (len(positions) > 1):
-                # Resets the counter for the next round
-                DISPLAY_REFRESH_INTERVAL_COUNTER = 1
-            else:
-                DISPLAY_REFRESH_INTERVAL_COUNTER += 1
-        else:
-            DISPLAY_REFRESH_INTERVAL_COUNTER += 1            
-       
-        t1 = time()
-        sleepTime = max(DATA_INTERVAL - (t1 - t0), 0)
-        sleep(sleepTime) # sleep for 30 seconds minus duration of get request and display refresh
+            print(f"Display updated after: {time() - t0:.3f}s")
 
+        stop_event.wait(max(DISPLAY_REFRESH_INTERVAL - (time() - t0), 0))
+
+
+def main():
+    global _epd
+    URL = 'http://api.open-notify.org/iss-now.json'
+
+    _epd = epd2in7b.EPD()
+    display = Display(epd2in7b.EPD_HEIGHT, epd2in7b.EPD_WIDTH)
+
+    positions = deque(maxlen=DATA_LIMIT)
+    lock = threading.Lock()
+    data_available = threading.Event()
+
+    fetcher = threading.Thread(
+        target=fetch_loop,
+        args=(URL, positions, lock, _stop_event, data_available),
+        daemon=True,
+    )
+    displayer = threading.Thread(
+        target=display_loop,
+        args=(display, _epd, positions, lock, _stop_event, data_available),
+        daemon=True,
+    )
+
+    fetcher.start()
+    displayer.start()
+
+    _stop_event.wait()
+    fetcher.join(timeout=DATA_INTERVAL + 5)
+    displayer.join(timeout=30)
 
 
 # gracefully exit without a big exception message if possible
 def ctrl_c_handler(signal, frame):
     print('Goodbye!')
+    _stop_event.set()
     # To preserve the life of the ePaper display, it is best not to keep it powered up -
     # instead putting it to sleep when done displaying, or cutting off power to it altogether when
     # quitting. We'll also make sure to clear the screen when exiting. If you are powering down your
     # Raspberry Pi and storing it and the ePaper display, it is recommended
     # that the display be cleared prior to storage, to prevent any burn-in.
-    # 
+    #
     # I have modified epdconfig.py to initialize SPI handle in module_init() (vs. at the global scope)
     # because slepe/module_exit closes the SPI handle, which wasn't getting initialized in module_init.
     # I've also added a module_sleep (which epd.sleep calls) which does not call GPIO.cleanup, and
     # made module_exit call both module_sleep and GPIO.cleanup
-    epd = epd2in7b.EPD()
+    epd = _epd or epd2in7b.EPD()
     print("Clearing screen before exiting ... Please wait!")
     epd.init()
     epd.Clear()
